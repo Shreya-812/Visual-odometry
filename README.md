@@ -1,5 +1,13 @@
 # Visual-Inertial Odometry Pipeline
 
+## Portfolio reproduction and experiments
+
+This repository is based on [FALCOdrone/Visual_Inertial_Odometry](https://github.com/FALCOdrone/Visual_Inertial_Odometry). The ROS 2 stereo VIO architecture and its original feature-tracking, PnP, and ESKF implementation come from that project. This copy records a local WSL reproduction and experiments; it is not an original implementation of the full VIO system.
+
+Local experiments on EuRoC Vicon Room 1, `V1_01_easy`, tested Shi-Tomasi parameter tuning, optional CLAHE preprocessing, and a 6-DOF ESKF visual-update NIS gate. In the single runs recorded so far, CLAHE produced the lowest trajectory errors. Feature tuning improved position error but worsened the ESKF rotation score. The NIS gate caused severe ESKF divergence and should not be used. Results and limitations are in [EXPERIMENT_RESULTS.md](EXPERIMENT_RESULTS.md); repeat the baseline and CLAHE runs before making a strong performance claim.
+
+The ROS package manifest declares MIT, but this repository copy has no top-level `LICENSE` file. Preserve upstream copyright and license notices, and include the applicable full license text before redistributing source.
+
 A ROS 2 stereo visual-inertial odometry system that fuses **Shi-Tomasi + KLT optical flow** feature tracking with an **Error-State Kalman Filter (ESKF)** for 6-DOF pose estimation. The pipeline processes synchronized stereo images and IMU data at 200 Hz, with optional simulated GPS fusion. It is evaluated on the [EuRoC MAV](https://projects.asl.ethz.ch/datasets/doku.php?id=kmavvisualinertialdatasets)   dataset using Absolute Trajectory Error (ATE) with Umeyama SE(3) alignment and Relative Pose Error (RPE) over multiple segment lengths.
 
 ---

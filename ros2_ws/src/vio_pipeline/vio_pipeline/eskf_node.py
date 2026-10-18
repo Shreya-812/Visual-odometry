@@ -248,6 +248,8 @@ class EskfNode(Node):
         # Measurement noise: how much to trust VIO vs IMU
         self.declare_parameter("meas_pos_std", 0.05)   # m
         self.declare_parameter("meas_ang_std", 0.02)   # rad
+        # NIS gate for the 6-DOF visual pose update; 0 disables gating.
+        self.declare_parameter("vio_gate_chi2", 0.0)  # 0 disables the experimental gate
         # Initial error-state covariance diagonal (seeds P at startup)
         self.declare_parameter("init_pos_std", 1.0)    # m
         self.declare_parameter("init_vel_std", 1.0)    # m/s
@@ -265,6 +267,7 @@ class EskfNode(Node):
         config_path    = self.get_parameter("config_path").value
         meas_pos_std   = float(self.get_parameter("meas_pos_std").value)
         meas_ang_std   = float(self.get_parameter("meas_ang_std").value)
+        self._vio_gate = float(self.get_parameter("vio_gate_chi2").value)
         init_pos_std   = float(self.get_parameter("init_pos_std").value)
         init_vel_std   = float(self.get_parameter("init_vel_std").value)
         init_att_std   = float(self.get_parameter("init_att_std").value)
@@ -280,11 +283,12 @@ class EskfNode(Node):
             "ESKF params: meas_pos_std=%.3f m  meas_ang_std=%.4f rad  "
             "init_pos=%.2f m  init_vel=%.2f m/s  init_att=%.4f rad  "
             "init_ba=%.4f  init_bg=%.5f  max_dt=%.2f s  "
-            "use_gps=%s  gps_h=%.2f m  gps_v=%.2f m  gate=%.3f"
+            "use_gps=%s  gps_h=%.2f m  gps_v=%.2f m  gps_gate=%.3f  vio_gate=%.3f"
             % (meas_pos_std, meas_ang_std,
                init_pos_std, init_vel_std, init_att_std,
                init_ba_std, init_bg_std, self._max_dt,
-               self._use_gps, gps_pos_std_h, gps_pos_std_v, self._gps_gate)
+               self._use_gps, gps_pos_std_h, gps_pos_std_v, self._gps_gate,
+               self._vio_gate)
         )
 
         # ── IMU noise figures (EuRoC defaults, overridden by YAML) ───────────
@@ -390,6 +394,7 @@ class EskfNode(Node):
 
         self._gps_update_count  = 0
         self._gps_reject_count  = 0
+        self._vio_reject_count = 0
 
         self.get_logger().info(
             "EskfNode ready — waiting for first VIO measurement to initialise. "
@@ -657,6 +662,24 @@ class EskfNode(Node):
 
         # Innovation covariance and Kalman gain
         S = H @ self._P @ H.T + self._R_meas  # (6×6)
+        if self._vio_gate > 0.0:
+            try:
+                nis = float(z @ np.linalg.solve(S, z))
+            except np.linalg.LinAlgError:
+                self._vio_reject_count += 1
+                self.get_logger().warning(
+                    "VIO update rejected: innovation covariance is singular"
+                )
+                return
+            if nis > self._vio_gate:
+                self._vio_reject_count += 1
+                if self._vio_reject_count % 10 == 1:
+                    self.get_logger().warning(
+                        f"VIO update rejected by NIS gate: nis={nis:.2f} "
+                        f"> threshold={self._vio_gate:.2f} "
+                        f"(rejected={self._vio_reject_count})"
+                    )
+                return
         K = self._P @ H.T @ np.linalg.solve(S.T, np.eye(6)).T  # (15×6)
 
         # Error-state estimate

@@ -67,6 +67,11 @@ class PoseEstimationNode(Node):
         self.declare_parameter("config_path", "")
         self.declare_parameter("min_tracks", 10)
         self.declare_parameter("circular_check_threshold", 2.0)
+        self.declare_parameter("feature_max_corners", 100)
+        self.declare_parameter("feature_quality_level", 0.5)
+        self.declare_parameter("clahe_enabled", False)
+        self.declare_parameter("clahe_clip_limit", 2.0)
+        self.declare_parameter("clahe_tile_size", 8)
         self.declare_parameter("max_depth", 30.0)          # metres — discard far points
         self.declare_parameter("min_inlier_ratio", 0.4)    # RANSAC inliers / candidates
         self.declare_parameter("max_translation", 0.5)     # metres per frame
@@ -75,6 +80,11 @@ class PoseEstimationNode(Node):
         config_path = self.get_parameter("config_path").value
         self.min_tracks = self.get_parameter("min_tracks").value
         self.circular_threshold = self.get_parameter("circular_check_threshold").value
+        feature_max_corners = int(self.get_parameter("feature_max_corners").value)
+        feature_quality_level = float(self.get_parameter("feature_quality_level").value)
+        self.clahe_enabled = bool(self.get_parameter("clahe_enabled").value)
+        clahe_clip_limit = float(self.get_parameter("clahe_clip_limit").value)
+        clahe_tile_size = int(self.get_parameter("clahe_tile_size").value)
         self.max_depth = self.get_parameter("max_depth").value
         self.min_inlier_ratio = self.get_parameter("min_inlier_ratio").value
         self.max_translation = self.get_parameter("max_translation").value
@@ -83,7 +93,18 @@ class PoseEstimationNode(Node):
         self.load_config(config_path)
         self._setup_camera_params()
 
-        self.extractor = FeatureExtractor()
+        self.extractor = FeatureExtractor(
+            max_corners=feature_max_corners,
+            quality_level=feature_quality_level,
+        )
+        self._clahe = (
+            cv2.createCLAHE(
+                clipLimit=clahe_clip_limit,
+                tileGridSize=(clahe_tile_size, clahe_tile_size),
+            )
+            if self.clahe_enabled
+            else None
+        )
 
         # Feature tracking state
         self._prev_left_features = None
@@ -197,6 +218,9 @@ class PoseEstimationNode(Node):
 
         left_img = self._image_msg_to_numpy(cam0_msg)
         right_img = self._image_msg_to_numpy(cam1_msg)
+        if self._clahe is not None:
+            left_img = self._clahe.apply(left_img)
+            right_img = self._clahe.apply(right_img)
 
         result = self.extractor.process_full_frame(
             left_img,

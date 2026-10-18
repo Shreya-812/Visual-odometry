@@ -33,6 +33,11 @@ def _make_nodes(context, *args, **kwargs):
     use_tf       = LaunchConfiguration("use_tf_publisher").perform(context)
     use_gps      = LaunchConfiguration("use_gps").perform(context)
     gps_mode     = LaunchConfiguration("gps_mode").perform(context).lower()
+    feature_max_corners = int(LaunchConfiguration("feature_max_corners").perform(context))
+    feature_quality_level = float(LaunchConfiguration("feature_quality_level").perform(context))
+    clahe_enabled = LaunchConfiguration("clahe_enabled").perform(context).lower() in ("true", "1", "yes")
+    vio_gate_chi2 = float(LaunchConfiguration("vio_gate_chi2").perform(context))
+    output_dir = LaunchConfiguration("output_dir").perform(context)
     use_sim_time_bool = use_sim_time.lower() in ("true", "1", "yes")
     use_tf_bool       = use_tf.lower()  in ("true", "1", "yes")
     use_gps_bool      = use_gps.lower() in ("true", "1", "yes")
@@ -55,12 +60,6 @@ def _make_nodes(context, *args, **kwargs):
 
     imu_rate_hz = int(cfg.get("imu", {}).get("rate_hz", 200))
 
-    output_dir = os.path.normpath(
-        os.path.join(
-            os.path.dirname(__file__), "..", "..", "..", "..", "..", "..", "tmp"
-        )
-    )
-
     return [
         # Pose Estimation Node
         Node(
@@ -72,6 +71,9 @@ def _make_nodes(context, *args, **kwargs):
                 {
                     "config_path": config_file,
                     "use_sim_time": use_sim_time_bool,
+                    "feature_max_corners": feature_max_corners,
+                    "feature_quality_level": feature_quality_level,
+                    "clahe_enabled": clahe_enabled,
                 }
             ],
         ),
@@ -179,6 +181,7 @@ def _make_nodes(context, *args, **kwargs):
                     "gps_pos_std_h": gps_eskf["pos_std_h"],
                     "gps_pos_std_v": gps_eskf["pos_std_v"],
                     "gps_gate_chi2": gps_eskf["gate_chi2"],
+                    "vio_gate_chi2": vio_gate_chi2,
                 }
             ],
         ),
@@ -283,6 +286,33 @@ def generate_launch_description():
                     "or 'rtk' (~1 cm H / ~2 cm V, baseline <40 km). "
                     "Sets noise params for both the simulator and the ESKF."
                 ),
+            ),
+            DeclareLaunchArgument(
+                "feature_max_corners",
+                default_value="100",
+                description="Shi-Tomasi feature cap (use 100 for the upstream baseline)",
+            ),
+            DeclareLaunchArgument(
+                "feature_quality_level",
+                default_value="0.5",
+                description="Shi-Tomasi quality level (use 0.5 for the upstream baseline)",
+            ),
+            DeclareLaunchArgument(
+                "clahe_enabled",
+                default_value="true",
+                description="Apply CLAHE to both stereo images before feature tracking",
+            ),
+            DeclareLaunchArgument(
+                "vio_gate_chi2",
+                default_value="0",
+                description="6-DOF VIO NIS threshold (0 disables the ESKF visual-update gate)",
+            ),
+            DeclareLaunchArgument(
+                "output_dir",
+                default_value=os.path.join(
+                    os.path.expanduser("~"), "Visual_Inertial_Odometry", "tmp"
+                ),
+                description="Directory for the pipeline CSV logs used by trajectory evaluation",
             ),
             OpaqueFunction(function=_make_nodes),
         ]
